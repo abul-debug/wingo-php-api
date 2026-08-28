@@ -1,133 +1,187 @@
 // ============================================================
-// 🚀 WINGO BIG/SMALL PREDICTOR ENGINE v5.0
-// REAL HISTORY + BET/SKIP API
+// 🚀 WINGO PREDICTOR ENGINE v6.0
+// REAL WINGO HISTORY
+// EXACT API STRUCTURE: data.list[]
 // ============================================================
 
 class Predictor {
 
     constructor(options = {}) {
-        this.betThreshold = options.betThreshold || 75;
+        this.betThreshold = options.betThreshold ?? 75;
     }
 
-    // ============================================================
-    // MAIN PREDICTION
-    // ============================================================
+    // ==========================================================
+    // MAIN PREDICT
+    // ==========================================================
 
     predict(data) {
 
         const results = this._normalize(data);
 
-        if (results.length < 5) {
+        if (results.length < 20) {
             return this._error(
-                `Insufficient history: ${results.length}/5`
+                `Need at least 20 valid results. Found ${results.length}`
             );
         }
 
-        // 12 analysis methods
+        // ------------------------------------------------------
+        // RUN ALL CALCULATIONS
+        // ------------------------------------------------------
+
         const signals = [
-            this._markovChain(results),
-            this._streakBreak(results),
+            this._markov(results),
+            this._streak(results),
             this._threeGram(results),
             this._fourGram(results),
-            this._meanReversion(results),
-            this._weightedMA(results),
-            this._frequencyDev(results),
-            this._lastDigitPattern(results),
-            this._fibonacciCycle(results),
+            this._recentRatio(results),
+            this._weightedRatio(results),
+            this._frequency(results),
+            this._numberDistribution(results),
+            this._alternation(results),
             this._bayesian(results),
-            this._rngTest(results),
-            this._chiSquare(results)
+            this._recentWindow(results),
+            this._digitPattern(results)
         ];
 
-        // ========================================================
-        // WEIGHTED VOTING
-        // ========================================================
+        // ------------------------------------------------------
+        // CALCULATE WEIGHTED SCORE
+        //
+        // Every signal returns:
+        // direction = Big / Small
+        // strength  = 0 to 1
+        // weight    = importance
+        // ------------------------------------------------------
 
-        let bigScore = 50;
-        let smallScore = 50;
+        let bigScore = 0;
+        let smallScore = 0;
 
-        signals.forEach(s => {
+        for (const signal of signals) {
 
-            const weight = s.weight || 10;
-            const strength = Math.max(
-                0,
-                Math.min(1, s.strength || 0)
+            if (!signal || !signal.direction) {
+                continue;
+            }
+
+            const weight =
+                Number(signal.weight) || 1;
+
+            const strength =
+                Math.max(
+                    0,
+                    Math.min(
+                        1,
+                        Number(signal.strength) || 0
+                    )
+                );
+
+            const score =
+                weight * strength;
+
+            if (signal.direction === "Big") {
+                bigScore += score;
+            }
+
+            if (signal.direction === "Small") {
+                smallScore += score;
+            }
+        }
+
+        // ------------------------------------------------------
+        // RAW PROBABILITY
+        // ------------------------------------------------------
+
+        const total =
+            bigScore + smallScore;
+
+        if (total <= 0) {
+            return this._error(
+                "No usable calculation signal"
             );
+        }
 
-            let multiplier = 1;
+        const bigProbability =
+            (bigScore / total) * 100;
 
-            if (s.vote === "Big_Strong" ||
-                s.vote === "Small_Strong") {
-                multiplier = 1.8;
-            }
-
-            if (
-                s.vote === "Big" ||
-                s.vote === "Big_Strong"
-            ) {
-                bigScore += weight * strength * multiplier;
-            }
-
-            if (
-                s.vote === "Small" ||
-                s.vote === "Small_Strong"
-            ) {
-                smallScore += weight * strength * multiplier;
-            }
-        });
-
-        // ========================================================
-        // PROBABILITY
-        // ========================================================
-
-        const totalScore = bigScore + smallScore;
-
-        const bigProb = Math.round(
-            (bigScore / totalScore) * 100
-        );
-
-        const smallProb = 100 - bigProb;
+        const smallProbability =
+            (smallScore / total) * 100;
 
         const prediction =
-            bigProb >= smallProb ? "Big" : "Small";
+            bigProbability >= smallProbability
+                ? "Big"
+                : "Small";
 
-        // ========================================================
+        // ------------------------------------------------------
         // CONFIDENCE
-        // ========================================================
+        //
+        // 50% = completely balanced
+        // 100% = one side dominates
+        // ------------------------------------------------------
 
-        const probability =
-            Math.max(bigProb, smallProb);
+        const dominantProbability =
+            Math.max(
+                bigProbability,
+                smallProbability
+            );
 
-        let confidence = Math.round(
-            50 + Math.abs(probability - 50)
-        );
+        const margin =
+            Math.abs(
+                bigProbability -
+                smallProbability
+            );
 
-        confidence = Math.max(
-            45,
-            Math.min(98, confidence)
-        );
+        let confidence =
+            Math.round(
+                50 + (margin / 2)
+            );
 
-        // ========================================================
+        confidence =
+            Math.max(
+                50,
+                Math.min(
+                    98,
+                    confidence
+                )
+            );
+
+        // ------------------------------------------------------
         // LEVEL
-        // ========================================================
+        // ------------------------------------------------------
 
-        const level = this._getLevel(confidence);
+        const level =
+            this._getLevel(confidence);
 
-        // BET only when confidence >= threshold
+        // ------------------------------------------------------
+        // BET / SKIP
+        // ------------------------------------------------------
+
         const shouldBet =
             confidence >= this.betThreshold;
 
-        // ========================================================
-        // MESSAGE
-        // ========================================================
+        const action =
+            shouldBet
+                ? "BET"
+                : "SKIP";
 
-        const message = shouldBet
-            ? `✅ BET: ${prediction} (${confidence}%)`
-            : `⏸ SKIP: ${prediction} (${confidence}%) — ${this.betThreshold}% chahiye`;
+        const message =
+            shouldBet
+                ? `✅ BET: ${prediction} (${confidence}%)`
+                : `⏸ SKIP: ${prediction} (${confidence}%) — ${this.betThreshold}% required`;
 
-        // ========================================================
-        // FINAL RESPONSE
-        // ========================================================
+        // ------------------------------------------------------
+        // RECENT HISTORY
+        // ------------------------------------------------------
+
+        const recent =
+            results
+                .slice(-10)
+                .map(x => ({
+                    period: x.issueNumber,
+                    number: x.number,
+                    size: x.size
+                }));
+
+        // ------------------------------------------------------
+        // RETURN
+        // ------------------------------------------------------
 
         return {
 
@@ -141,36 +195,74 @@ class Predictor {
 
             shouldBet,
 
-            action: shouldBet ? "BET" : "SKIP",
+            action,
 
             message,
 
-            analysis: {
+            calculation: {
 
-                bigProbability: bigProb,
+                bigScore:
+                    Number(bigScore.toFixed(3)),
 
-                smallProbability: smallProb,
+                smallScore:
+                    Number(smallScore.toFixed(3)),
 
-                signals: signals.map(s => ({
-
-                    method: s.method,
-
-                    vote: String(s.vote)
-                        .replace("_Strong", ""),
-
-                    strength: Math.round(
-                        (s.strength || 0) * 100
+                bigProbability:
+                    Number(
+                        bigProbability.toFixed(2)
                     ),
 
-                    details: s.details || ""
+                smallProbability:
+                    Number(
+                        smallProbability.toFixed(2)
+                    ),
 
-                })),
+                margin:
+                    Number(
+                        margin.toFixed(2)
+                    ),
 
-                streaks:
-                    this._getStreaks(results),
+                dominantProbability:
+                    Number(
+                        dominantProbability.toFixed(2)
+                    )
+            },
+
+            analysis: {
+
+                signals:
+                    signals.map(s => ({
+
+                        method: s.method,
+
+                        prediction:
+                            s.direction,
+
+                        strength:
+                            Math.round(
+                                s.strength * 100
+                            ),
+
+                        weight:
+                            s.weight,
+
+                        score:
+                            Number(
+                                (
+                                    s.strength *
+                                    s.weight
+                                ).toFixed(2)
+                            ),
+
+                        details:
+                            s.details || ""
+                    })),
+
+                streak:
+                    this._getStreak(results),
 
                 distribution:
-                    this._getDistribution(results),
+                    this._distribution(results),
 
                 recentTrend:
                     results
@@ -182,88 +274,98 @@ class Predictor {
                         )
                         .join(""),
 
-                historyUsed:
-                    results.length
+                recentResults:
+                    recent
             }
         };
     }
 
-    // ============================================================
-    // 1. MARKOV CHAIN
-    // ============================================================
 
-    _markovChain(r) {
+    // ==========================================================
+    // 1. MARKOV
+    // ==========================================================
 
-        let bb = 0;
-        let bs = 0;
-        let sb = 0;
-        let ss = 0;
+    _markov(r) {
+
+        let BB = 0;
+        let BS = 0;
+        let SB = 0;
+        let SS = 0;
 
         for (let i = 1; i < r.length; i++) {
 
-            const prev = r[i - 1].size;
-            const curr = r[i].size;
+            const previous =
+                r[i - 1].size;
 
-            if (prev === "Big" && curr === "Big") bb++;
-            if (prev === "Big" && curr === "Small") bs++;
-            if (prev === "Small" && curr === "Big") sb++;
-            if (prev === "Small" && curr === "Small") ss++;
+            const current =
+                r[i].size;
+
+            if (
+                previous === "Big" &&
+                current === "Big"
+            ) BB++;
+
+            if (
+                previous === "Big" &&
+                current === "Small"
+            ) BS++;
+
+            if (
+                previous === "Small" &&
+                current === "Big"
+            ) SB++;
+
+            if (
+                previous === "Small" &&
+                current === "Small"
+            ) SS++;
         }
 
         const last =
             r[r.length - 1].size;
 
-        let probBig = 50;
+        let bigProbability = 50;
 
         if (last === "Big") {
 
-            const total = bb + bs;
+            const total =
+                BB + BS;
 
             if (total > 0) {
-                probBig = (bb / total) * 100;
+                bigProbability =
+                    (BB / total) * 100;
             }
 
         } else {
 
-            const total = sb + ss;
+            const total =
+                SB + SS;
 
             if (total > 0) {
-                probBig = (sb / total) * 100;
+                bigProbability =
+                    (SB / total) * 100;
             }
         }
 
-        return {
-
-            method: "Markov Chain",
-
-            vote:
-                probBig >= 50
-                    ? "Big"
-                    : "Small",
-
-            strength:
-                Math.min(
-                    1,
-                    Math.abs(probBig - 50) / 50
-                ),
-
-            weight: 15,
-
-            details:
-                `P(Big)=${Math.round(probBig)}%`
-        };
+        return this._probabilitySignal(
+            "Markov",
+            bigProbability,
+            15,
+            `Big transition P=${Math.round(bigProbability)}%`
+        );
     }
 
-    // ============================================================
-    // 2. STREAK BREAK
-    // ============================================================
 
-    _streakBreak(r) {
+    // ==========================================================
+    // 2. STREAK
+    // ==========================================================
 
-        let streak = 1;
+    _streak(r) {
 
         const last =
             r[r.length - 1].size;
+
+        let streak = 1;
 
         for (
             let i = r.length - 2;
@@ -278,115 +380,39 @@ class Predictor {
             }
         }
 
-        if (streak >= 7) {
+        // Long streak = mild reversal signal.
+        // Not forced; strength grows gradually.
+        let probability = 50;
 
-            return {
+        if (streak >= 3) {
 
-                method: "Streak Break",
+            const strength =
+                Math.min(
+                    0.75,
+                    0.15 +
+                    (streak - 3) * 0.10
+                );
 
-                vote:
-                    last === "Big"
-                        ? "Small_Strong"
-                        : "Big_Strong",
-
-                strength: 0.95,
-
-                weight: 20,
-
-                details:
-                    `${last} × ${streak}`
-            };
+            probability =
+                last === "Big"
+                    ? 50 - strength * 50
+                    : 50 + strength * 50;
         }
 
-        if (streak >= 5) {
-
-            return {
-
-                method: "Streak Break",
-
-                vote:
-                    last === "Big"
-                        ? "Small"
-                        : "Big",
-
-                strength: 0.85,
-
-                weight: 20,
-
-                details:
-                    `${last} × ${streak}`
-            };
-        }
-
-        if (streak >= 4) {
-
-            return {
-
-                method: "Streak Break",
-
-                vote:
-                    last === "Big"
-                        ? "Small"
-                        : "Big",
-
-                strength: 0.70,
-
-                weight: 20,
-
-                details:
-                    `${last} × ${streak}`
-            };
-        }
-
-        if (streak === 3) {
-
-            return {
-
-                method: "Streak Break",
-
-                vote:
-                    last === "Big"
-                        ? "Small"
-                        : "Big",
-
-                strength: 0.55,
-
-                weight: 18,
-
-                details:
-                    `${last} × ${streak}`
-            };
-        }
-
-        return {
-
-            method: "Streak Break",
-
-            vote: last,
-
-            strength: 0.30,
-
-            weight: 10,
-
-            details: "No strong streak"
-        };
+        return this._probabilitySignal(
+            "Streak",
+            probability,
+            8,
+            `${last} streak x${streak}`
+        );
     }
 
-    // ============================================================
+
+    // ==========================================================
     // 3. THREE GRAM
-    // ============================================================
+    // ==========================================================
 
     _threeGram(r) {
-
-        if (r.length < 4) {
-
-            return {
-                method: "3-Gram",
-                vote: "Big",
-                strength: 0.3,
-                weight: 8
-            };
-        }
 
         const patterns = {};
 
@@ -409,20 +435,21 @@ class Predictor {
                 r[i + 3].size;
 
             if (!patterns[pattern]) {
+
                 patterns[pattern] = {
-                    b: 0,
-                    s: 0
+                    big: 0,
+                    small: 0
                 };
             }
 
             if (next === "Big") {
-                patterns[pattern].b++;
+                patterns[pattern].big++;
             } else {
-                patterns[pattern].s++;
+                patterns[pattern].small++;
             }
         }
 
-        const last3 =
+        const lastPattern =
             r.slice(-3)
                 .map(x =>
                     x.size === "Big"
@@ -431,72 +458,41 @@ class Predictor {
                 )
                 .join("");
 
-        if (patterns[last3]) {
+        const p =
+            patterns[lastPattern];
 
-            const p =
-                patterns[last3];
-
-            const total =
-                p.b + p.s;
-
-            const pb =
-                (p.b / total) * 100;
+        if (!p) {
 
             return {
-
                 method: "3-Gram",
-
-                vote:
-                    pb >= 50
-                        ? "Big"
-                        : "Small",
-
-                strength:
-                    Math.min(
-                        1,
-                        Math.abs(pb - 50) / 50
-                    ),
-
-                weight: 12,
-
+                direction: null,
+                strength: 0,
+                weight: 10,
                 details:
-                    `"${last3}" → ${p.b}B/${p.s}S`
+                    `${lastPattern}: no historical match`
             };
         }
 
-        return {
+        const total =
+            p.big + p.small;
 
-            method: "3-Gram",
+        const probability =
+            (p.big / total) * 100;
 
-            vote:
-                r[r.length - 1].size === "Big"
-                    ? "Small"
-                    : "Big",
-
-            strength: 0.4,
-
-            weight: 8,
-
-            details:
-                `"${last3}" new`
-        };
+        return this._probabilitySignal(
+            "3-Gram",
+            probability,
+            12,
+            `${lastPattern} → ${p.big}B/${p.small}S`
+        );
     }
 
-    // ============================================================
+
+    // ==========================================================
     // 4. FOUR GRAM
-    // ============================================================
+    // ==========================================================
 
     _fourGram(r) {
-
-        if (r.length < 5) {
-
-            return {
-                method: "4-Gram",
-                vote: "Big",
-                strength: 0.2,
-                weight: 6
-            };
-        }
 
         const patterns = {};
 
@@ -519,20 +515,21 @@ class Predictor {
                 r[i + 4].size;
 
             if (!patterns[pattern]) {
+
                 patterns[pattern] = {
-                    b: 0,
-                    s: 0
+                    big: 0,
+                    small: 0
                 };
             }
 
             if (next === "Big") {
-                patterns[pattern].b++;
+                patterns[pattern].big++;
             } else {
-                patterns[pattern].s++;
+                patterns[pattern].small++;
             }
         }
 
-        const last4 =
+        const lastPattern =
             r.slice(-4)
                 .map(x =>
                     x.size === "Big"
@@ -541,659 +538,424 @@ class Predictor {
                 )
                 .join("");
 
-        if (patterns[last4]) {
+        const p =
+            patterns[lastPattern];
 
-            const p =
-                patterns[last4];
-
-            const total =
-                p.b + p.s;
-
-            const pb =
-                (p.b / total) * 100;
+        if (!p) {
 
             return {
-
                 method: "4-Gram",
-
-                vote:
-                    pb >= 50
-                        ? "Big"
-                        : "Small",
-
-                strength:
-                    Math.min(
-                        1,
-                        Math.abs(pb - 50) / 50
-                    ),
-
-                weight: 10,
-
+                direction: null,
+                strength: 0,
+                weight: 8,
                 details:
-                    `"${last4}" → ${p.b}B/${p.s}S`
+                    `${lastPattern}: no historical match`
             };
         }
 
-        return {
+        const total =
+            p.big + p.small;
 
-            method: "4-Gram",
+        const probability =
+            (p.big / total) * 100;
 
-            vote:
-                r[r.length - 1].size === "Big"
-                    ? "Small"
-                    : "Big",
-
-            strength: 0.35,
-
-            weight: 6,
-
-            details:
-                `"${last4}" new`
-        };
+        return this._probabilitySignal(
+            "4-Gram",
+            probability,
+            10,
+            `${lastPattern} → ${p.big}B/${p.small}S`
+        );
     }
 
-    // ============================================================
-    // 5. MEAN REVERSION
-    // ============================================================
 
-    _meanReversion(r) {
+    // ==========================================================
+    // 5. RECENT RATIO
+    // ==========================================================
 
-        const b =
-            r.filter(x =>
-                x.size === "Big"
-            ).length;
-
-        const s =
-            r.length - b;
-
-        const deviation =
-            (b - r.length * 0.5) /
-            (r.length * 0.5);
-
-        if (deviation > 0.30) {
-
-            return {
-
-                method: "Mean Reversion",
-
-                vote: "Small",
-
-                strength:
-                    Math.min(1, deviation),
-
-                weight: 14,
-
-                details:
-                    `B:${b} S:${s}`
-            };
-        }
-
-        if (deviation < -0.30) {
-
-            return {
-
-                method: "Mean Reversion",
-
-                vote: "Big",
-
-                strength:
-                    Math.min(
-                        1,
-                        -deviation
-                    ),
-
-                weight: 14,
-
-                details:
-                    `B:${b} S:${s}`
-            };
-        }
-
-        return {
-
-            method: "Mean Reversion",
-
-            vote:
-                r[r.length - 1].size === "Big"
-                    ? "Small"
-                    : "Big",
-
-            strength: 0.35,
-
-            weight: 8,
-
-            details:
-                `B:${b} S:${s}`
-        };
-    }
-
-    // ============================================================
-    // 6. WEIGHTED MOVING AVERAGE
-    // ============================================================
-
-    _weightedMA(r) {
+    _recentRatio(r) {
 
         const recent =
-            r.slice(-10);
+            r.slice(-20);
 
-        let wb = 0;
-        let ws = 0;
+        const big =
+            recent.filter(
+                x => x.size === "Big"
+            ).length;
+
+        const probability =
+            (big / recent.length) * 100;
+
+        return this._probabilitySignal(
+            "Recent Ratio",
+            probability,
+            12,
+            `Last ${recent.length}: ${big}B/${recent.length - big}S`
+        );
+    }
+
+
+    // ==========================================================
+    // 6. WEIGHTED RECENT RATIO
+    // ==========================================================
+
+    _weightedRatio(r) {
+
+        const recent =
+            r.slice(-20);
+
+        let bigScore = 0;
         let totalWeight = 0;
 
-        recent.forEach((x, i) => {
+        recent.forEach((x, index) => {
 
-            const weight = i + 1;
+            const weight =
+                index + 1;
 
             totalWeight += weight;
 
             if (x.size === "Big") {
-                wb += weight;
-            } else {
-                ws += weight;
+                bigScore += weight;
             }
         });
 
-        const bp =
-            (wb / totalWeight) * 100;
+        const probability =
+            (bigScore / totalWeight) * 100;
 
-        if (bp > 65) {
-
-            return {
-
-                method: "WMA",
-
-                vote: "Small",
-
-                strength:
-                    Math.min(
-                        1,
-                        (bp - 50) / 50
-                    ),
-
-                weight: 12,
-
-                details:
-                    `B:${Math.round(bp)}%`
-            };
-        }
-
-        if (bp < 35) {
-
-            return {
-
-                method: "WMA",
-
-                vote: "Big",
-
-                strength:
-                    Math.min(
-                        1,
-                        (50 - bp) / 50
-                    ),
-
-                weight: 12,
-
-                details:
-                    `S:${Math.round(100 - bp)}%`
-            };
-        }
-
-        return {
-
-            method: "WMA",
-
-            vote:
-                bp >= 50
-                    ? "Big"
-                    : "Small",
-
-            strength: 0.40,
-
-            weight: 8,
-
-            details:
-                `B:${Math.round(bp)}%`
-        };
+        return this._probabilitySignal(
+            "Weighted Recent",
+            probability,
+            14,
+            `Weighted Big=${Math.round(probability)}%`
+        );
     }
 
-    // ============================================================
-    // 7. FREQUENCY DEVIATION
-    // ============================================================
 
-    _frequencyDev(r) {
+    // ==========================================================
+    // 7. FULL FREQUENCY
+    // ==========================================================
 
-        const b =
-            r.filter(x =>
-                x.size === "Big"
+    _frequency(r) {
+
+        const big =
+            r.filter(
+                x => x.size === "Big"
             ).length;
 
-        const ratio =
-            b / r.length;
+        const probability =
+            (big / r.length) * 100;
 
-        if (ratio > 0.58) {
-
-            return {
-
-                method: "Freq Deviation",
-
-                vote: "Small",
-
-                strength:
-                    Math.min(
-                        1,
-                        (ratio - 0.5) * 4
-                    ),
-
-                weight: 10,
-
-                details:
-                    `B:${Math.round(ratio * 100)}%`
-            };
-        }
-
-        if (ratio < 0.42) {
-
-            return {
-
-                method: "Freq Deviation",
-
-                vote: "Big",
-
-                strength:
-                    Math.min(
-                        1,
-                        (0.5 - ratio) * 4
-                    ),
-
-                weight: 10,
-
-                details:
-                    `B:${Math.round(ratio * 100)}%`
-            };
-        }
-
-        return {
-
-            method: "Freq Deviation",
-
-            vote:
-                r[r.length - 1].size === "Big"
-                    ? "Small"
-                    : "Big",
-
-            strength: 0.30,
-
-            weight: 6,
-
-            details:
-                `Balanced ${Math.round(ratio * 100)}%`
-        };
+        return this._probabilitySignal(
+            "Frequency",
+            probability,
+            8,
+            `${big}B/${r.length - big}S`
+        );
     }
 
-    // ============================================================
-    // 8. LAST DIGIT
-    // ============================================================
 
-    _lastDigitPattern(r) {
+    // ==========================================================
+    // 8. NUMBER DISTRIBUTION
+    // ==========================================================
 
-        const digits =
-            r.map(x => x.number % 10);
+    _numberDistribution(r) {
 
         const recent =
-            digits.slice(-5);
+            r.slice(-50);
 
-        if (recent.length < 3) {
+        let big = 0;
 
-            return {
+        for (const x of recent) {
 
-                method: "Last Digit",
-
-                vote: "Big",
-
-                strength: 0.3,
-
-                weight: 5
-            };
-        }
-
-        let even = 0;
-
-        recent.forEach(n => {
-
-            if (n % 2 === 0) {
-                even++;
+            if (x.number >= 5) {
+                big++;
             }
-        });
-
-        if (even / recent.length >= 0.8) {
-
-            return {
-
-                method: "Last Digit",
-
-                vote: "Small",
-
-                strength: 0.70,
-
-                weight: 8,
-
-                details:
-                    `${even}/${recent.length} even`
-            };
         }
 
-        if (even / recent.length <= 0.2) {
+        const probability =
+            (big / recent.length) * 100;
 
-            return {
-
-                method: "Last Digit",
-
-                vote: "Big",
-
-                strength: 0.70,
-
-                weight: 8,
-
-                details:
-                    `${even}/${recent.length} even`
-            };
-        }
-
-        return {
-
-            method: "Last Digit",
-
-            vote:
-                recent[recent.length - 1] % 2 === 0
-                    ? "Small"
-                    : "Big",
-
-            strength: 0.40,
-
-            weight: 5,
-
-            details:
-                `${even}/${recent.length} even`
-        };
+        return this._probabilitySignal(
+            "Number Distribution",
+            probability,
+            8,
+            `Last ${recent.length}: ${big} Big`
+        );
     }
 
-    // ============================================================
-    // 9. FIBONACCI / ALTERNATION
-    // ============================================================
 
-    _fibonacciCycle(r) {
+    // ==========================================================
+    // 9. ALTERNATION
+    // ==========================================================
 
-        if (r.length < 6) {
+    _alternation(r) {
 
-            return {
+        const recent =
+            r.slice(-20);
 
-                method: "Fibonacci",
-
-                vote: "Big",
-
-                strength: 0.3,
-
-                weight: 5
-            };
-        }
-
-        let alternations = 0;
+        let changes = 0;
 
         for (
             let i = 1;
-            i < r.length;
+            i < recent.length;
             i++
         ) {
 
             if (
-                r[i].size !==
-                r[i - 1].size
+                recent[i].size !==
+                recent[i - 1].size
             ) {
-                alternations++;
+                changes++;
             }
         }
 
         const ratio =
-            alternations /
-            (r.length - 1);
+            changes /
+            (recent.length - 1);
 
         const last =
-            r[r.length - 1].size;
+            recent[recent.length - 1].size;
 
+        let probability = 50;
+
+        // Very high alternation:
+        // slight continuation of opposite side.
         if (ratio > 0.65) {
 
-            return {
-
-                method: "Fibonacci",
-
-                vote:
-                    last === "Big"
-                        ? "Small"
-                        : "Big",
-
-                strength: 0.75,
-
-                weight: 10,
-
-                details:
-                    `Alt:${Math.round(ratio * 100)}%`
-            };
-        }
-
-        if (ratio < 0.35) {
-
-            return {
-
-                method: "Fibonacci",
-
-                vote: last,
-
-                strength: 0.60,
-
-                weight: 8,
-
-                details:
-                    `Str:${Math.round(ratio * 100)}%`
-            };
-        }
-
-        return {
-
-            method: "Fibonacci",
-
-            vote:
+            probability =
                 last === "Big"
-                    ? "Small"
-                    : "Big",
+                    ? 42
+                    : 58;
+        }
 
-            strength: 0.50,
+        // Very low alternation:
+        // slight continuation of same side.
+        else if (ratio < 0.35) {
 
-            weight: 6,
+            probability =
+                last === "Big"
+                    ? 56
+                    : 44;
+        }
 
-            details:
-                `Alt:${Math.round(ratio * 100)}%`
-        };
+        return this._probabilitySignal(
+            "Alternation",
+            probability,
+            7,
+            `Change rate=${Math.round(ratio * 100)}%`
+        );
     }
 
-    // ============================================================
+
+    // ==========================================================
     // 10. BAYESIAN
-    // ============================================================
+    // ==========================================================
 
     _bayesian(r) {
 
         const recent =
-            r.slice(-10);
+            r.slice(-30);
 
-        const b =
-            recent.filter(x =>
-                x.size === "Big"
+        const big =
+            recent.filter(
+                x => x.size === "Big"
             ).length;
 
-        const posterior =
-            (1 + b) /
-            (2 + recent.length);
+        // Beta(1,1) prior
+        const probability =
+            ((big + 1) /
+            (recent.length + 2)) * 100;
 
-        return {
-
-            method: "Bayesian",
-
-            vote:
-                posterior >= 0.5
-                    ? "Big"
-                    : "Small",
-
-            strength:
-                Math.min(
-                    1,
-                    Math.abs(
-                        posterior - 0.5
-                    ) * 3
-                ),
-
-            weight: 12,
-
-            details:
-                `P=${Math.round(
-                    posterior * 100
-                )}%`
-        };
+        return this._probabilitySignal(
+            "Bayesian",
+            probability,
+            10,
+            `Posterior=${Math.round(probability)}%`
+        );
     }
 
-    // ============================================================
-    // 11. RNG TEST
-    // ============================================================
 
-    _rngTest(r) {
+    // ==========================================================
+    // 11. MULTI WINDOW
+    // ==========================================================
 
-        let runs = 1;
+    _recentWindow(r) {
 
-        for (
-            let i = 1;
-            i < r.length;
-            i++
-        ) {
+        const windows = [
+            5,
+            10,
+            20,
+            50
+        ];
 
-            if (
-                r[i].size !==
-                r[i - 1].size
-            ) {
-                runs++;
+        let totalProbability = 0;
+        let count = 0;
+
+        const details = [];
+
+        for (const size of windows) {
+
+            if (r.length < size) {
+                continue;
             }
+
+            const part =
+                r.slice(-size);
+
+            const big =
+                part.filter(
+                    x => x.size === "Big"
+                ).length;
+
+            const probability =
+                (big / size) * 100;
+
+            totalProbability +=
+                probability;
+
+            count++;
+
+            details.push(
+                `${size}:${Math.round(probability)}%`
+            );
         }
 
-        const expected =
-            1 +
-            (2 * (r.length - 1) * 0.25);
-
-        const ratio =
-            runs / expected;
-
-        const last =
-            r[r.length - 1].size;
-
-        return {
-
-            method: "RNG Test",
-
-            vote:
-                last === "Big"
-                    ? "Small"
-                    : "Big",
-
-            strength:
-                ratio < 0.7
-                    ? 0.8
-                    : ratio > 1.3
-                        ? 0.75
-                        : 0.4,
-
-            weight:
-                ratio < 0.7 ||
-                ratio > 1.3
-                    ? 10
-                    : 6,
-
-            details:
-                `Runs:${runs}/${Math.round(expected)}`
-        };
-    }
-
-    // ============================================================
-    // 12. CHI SQUARE
-    // ============================================================
-
-    _chiSquare(r) {
-
-        const b =
-            r.filter(x =>
-                x.size === "Big"
-            ).length;
-
-        const s =
-            r.length - b;
-
-        const expected =
-            r.length / 2;
-
-        const chi =
-            Math.pow(
-                b - expected,
-                2
-            ) / expected +
-            Math.pow(
-                s - expected,
-                2
-            ) / expected;
-
-        if (chi > 3.84) {
+        if (!count) {
 
             return {
-
-                method: "Chi-Square",
-
-                vote:
-                    b > s
-                        ? "Small"
-                        : "Big",
-
-                strength:
-                    Math.min(
-                        1,
-                        chi / 10
-                    ),
-
-                weight: 10,
-
-                details:
-                    `χ²=${Math.round(
-                        chi * 10
-                    ) / 10}`
+                method: "Multi Window",
+                direction: null,
+                strength: 0,
+                weight: 8,
+                details: "No windows"
             };
         }
 
+        const probability =
+            totalProbability / count;
+
+        return this._probabilitySignal(
+            "Multi Window",
+            probability,
+            10,
+            details.join(" | ")
+        );
+    }
+
+
+    // ==========================================================
+    // 12. LAST NUMBER PATTERN
+    // ==========================================================
+
+    _digitPattern(r) {
+
+        const recent =
+            r.slice(-10);
+
+        const counts =
+            Array(10).fill(0);
+
+        for (const x of recent) {
+            counts[x.number]++;
+        }
+
+        let bigCount = 0;
+        let smallCount = 0;
+
+        for (let n = 0; n <= 9; n++) {
+
+            if (n >= 5) {
+                bigCount += counts[n];
+            } else {
+                smallCount += counts[n];
+            }
+        }
+
+        const probability =
+            (bigCount /
+            (bigCount + smallCount)) * 100;
+
+        return this._probabilitySignal(
+            "Last Number Pattern",
+            probability,
+            6,
+            `Last ${recent.length}: ${bigCount}B/${smallCount}S`
+        );
+    }
+
+
+    // ==========================================================
+    // PROBABILITY → SIGNAL
+    // ==========================================================
+
+    _probabilitySignal(
+        method,
+        probability,
+        weight,
+        details
+    ) {
+
+        if (
+            !Number.isFinite(probability)
+        ) {
+
+            return {
+                method,
+                direction: null,
+                strength: 0,
+                weight,
+                details
+            };
+        }
+
+        const distance =
+            Math.abs(
+                probability - 50
+            );
+
+        // Ignore almost 50/50 signals
+        if (distance < 2) {
+
+            return {
+                method,
+                direction: null,
+                strength: 0,
+                weight,
+                details:
+                    `${details} | Neutral`
+            };
+        }
+
+        const direction =
+            probability > 50
+                ? "Big"
+                : "Small";
+
+        // Confidence/strength of this individual method
+        const strength =
+            Math.min(
+                1,
+                distance / 50
+            );
+
         return {
 
-            method: "Chi-Square",
+            method,
 
-            vote:
-                r[r.length - 1].size === "Big"
-                    ? "Small"
-                    : "Big",
+            direction,
 
-            strength: 0.35,
+            strength,
 
-            weight: 5,
+            weight,
 
             details:
-                `χ²=${Math.round(
-                    chi * 10
-                ) / 10}`
+                `${details} | P(Big)=${probability.toFixed(1)}%`
         };
     }
 
-    // ============================================================
-    // NORMALIZE REAL HISTORY
-    // ============================================================
+
+    // ==========================================================
+    // NORMALIZE
+    // ==========================================================
 
     _normalize(data) {
 
@@ -1202,101 +964,62 @@ class Predictor {
         }
 
         return data
-            .map(d => {
-
-                let num;
-
-                let issue = "";
+            .map(item => {
 
                 if (
-                    typeof d === "object" &&
-                    d !== null
+                    !item ||
+                    typeof item !== "object"
                 ) {
-
-                    num = Number(
-                        d.number ??
-                        d.result ??
-                        d.openNumber ??
-                        d.lotteryNumber
-                    );
-
-                    issue =
-                        String(
-                            d.issueNumber ??
-                            d.issue ??
-                            d.period ??
-                            ""
-                        );
-
-                } else {
-
-                    num = Number(d);
+                    return null;
                 }
 
+                const number =
+                    Number(item.number);
+
                 if (
-                    !Number.isInteger(num) ||
-                    num < 0 ||
-                    num > 9
+                    !Number.isInteger(number) ||
+                    number < 0 ||
+                    number > 9
                 ) {
                     return null;
                 }
 
                 return {
 
-                    number: num,
+                    number,
+
+                    issueNumber:
+                        String(
+                            item.issueNumber ?? ""
+                        ),
 
                     size:
-                        num >= 5
+                        number >= 5
                             ? "Big"
-                            : "Small",
-
-                    issueNumber: issue,
-
-                    lastDigit:
-                        num % 10
+                            : "Small"
                 };
             })
             .filter(Boolean);
     }
 
-    // ============================================================
-    // LEVEL
-    // ============================================================
 
-    _getLevel(confidence) {
-
-        if (confidence >= 90) {
-            return "VERY_HIGH";
-        }
-
-        if (confidence >= 75) {
-            return "HIGH";
-        }
-
-        if (confidence >= 65) {
-            return "MODERATE";
-        }
-
-        return "LOW";
-    }
-
-    // ============================================================
+    // ==========================================================
     // STREAK
-    // ============================================================
+    // ==========================================================
 
-    _getStreaks(r) {
+    _getStreak(r) {
 
         if (!r.length) {
             return {
-                size: 0,
-                type: "None"
+                type: null,
+                count: 0
             };
         }
 
-        let streak = 1;
-
         const last =
             r[r.length - 1].size;
+
+        let count = 1;
 
         for (
             let i = r.length - 2;
@@ -1305,29 +1028,28 @@ class Predictor {
         ) {
 
             if (r[i].size === last) {
-                streak++;
+                count++;
             } else {
                 break;
             }
         }
 
         return {
-
-            size: streak,
-
-            type: last
+            type: last,
+            count
         };
     }
 
-    // ============================================================
-    // DISTRIBUTION
-    // ============================================================
 
-    _getDistribution(r) {
+    // ==========================================================
+    // DISTRIBUTION
+    // ==========================================================
+
+    _distribution(r) {
 
         const big =
-            r.filter(x =>
-                x.size === "Big"
+            r.filter(
+                x => x.size === "Big"
             ).length;
 
         const small =
@@ -1342,20 +1064,47 @@ class Predictor {
             total: r.length,
 
             bigPercent:
-                Math.round(
-                    (big / r.length) * 100
+                Number(
+                    (
+                        big / r.length * 100
+                    ).toFixed(2)
                 ),
 
             smallPercent:
-                Math.round(
-                    (small / r.length) * 100
+                Number(
+                    (
+                        small / r.length * 100
+                    ).toFixed(2)
                 )
         };
     }
 
-    // ============================================================
+
+    // ==========================================================
+    // LEVEL
+    // ==========================================================
+
+    _getLevel(c) {
+
+        if (c >= 90) {
+            return "VERY_HIGH";
+        }
+
+        if (c >= 75) {
+            return "HIGH";
+        }
+
+        if (c >= 65) {
+            return "MODERATE";
+        }
+
+        return "LOW";
+    }
+
+
+    // ==========================================================
     // ERROR
-    // ============================================================
+    // ==========================================================
 
     _error(message) {
 
@@ -1384,7 +1133,7 @@ class Predictor {
 
 
 // ============================================================
-// CREATE ENGINE
+// ENGINE
 // ============================================================
 
 const predictorEngine =
@@ -1394,7 +1143,7 @@ const predictorEngine =
 
 
 // ============================================================
-// WIN GO HISTORY URL
+// REAL WINGO HISTORY API
 // ============================================================
 
 const HISTORY_URL =
@@ -1402,10 +1151,10 @@ const HISTORY_URL =
 
 
 // ============================================================
-// FETCH REAL WINGO HISTORY
+// FETCH HISTORY
 // ============================================================
 
-async function getWinGoHistory() {
+async function fetchHistory() {
 
     const controller =
         new AbortController();
@@ -1427,6 +1176,7 @@ async function getWinGoHistory() {
                     headers: {
                         "Accept":
                             "application/json",
+
                         "User-Agent":
                             "Mozilla/5.0"
                     },
@@ -1439,118 +1189,37 @@ async function getWinGoHistory() {
         if (!response.ok) {
 
             throw new Error(
-                `History API HTTP ${response.status}`
+                `HTTP ${response.status}`
             );
         }
 
         const json =
             await response.json();
 
-        return extractHistory(json);
+        // ======================================================
+        // EXACT STRUCTURE FROM YOUR JSON
+        // json.data.list
+        // ======================================================
+
+        if (
+            !json ||
+            !json.data ||
+            !Array.isArray(
+                json.data.list
+            )
+        ) {
+
+            throw new Error(
+                "Invalid WinGo API structure: data.list not found"
+            );
+        }
+
+        return json.data.list;
 
     } finally {
 
         clearTimeout(timeout);
     }
-}
-
-
-// ============================================================
-// EXTRACT HISTORY FROM DIFFERENT JSON STRUCTURES
-// ============================================================
-
-function extractHistory(json) {
-
-    let found = [];
-
-    function walk(value) {
-
-        if (found.length >= 500) {
-            return;
-        }
-
-        if (Array.isArray(value)) {
-
-            for (const item of value) {
-
-                if (
-                    item &&
-                    typeof item === "object"
-                ) {
-
-                    const number =
-                        item.number ??
-                        item.result ??
-                        item.openNumber ??
-                        item.lotteryNumber;
-
-                    const issue =
-                        item.issueNumber ??
-                        item.issue ??
-                        item.period;
-
-                    const n =
-                        Number(number);
-
-                    if (
-                        Number.isInteger(n) &&
-                        n >= 0 &&
-                        n <= 9
-                    ) {
-
-                        found.push({
-
-                            number: n,
-
-                            issueNumber:
-                                issue != null
-                                    ? String(issue)
-                                    : ""
-                        });
-                    }
-                }
-
-                walk(item);
-            }
-
-            return;
-        }
-
-        if (
-            value &&
-            typeof value === "object"
-        ) {
-
-            for (
-                const key of Object.keys(value)
-            ) {
-
-                walk(value[key]);
-            }
-        }
-    }
-
-    walk(json);
-
-    // Duplicate removal
-    const seen = new Set();
-
-    found =
-        found.filter(item => {
-
-            const key =
-                `${item.issueNumber}_${item.number}`;
-
-            if (seen.has(key)) {
-                return false;
-            }
-
-            seen.add(key);
-
-            return true;
-        });
-
-    return found;
 }
 
 
@@ -1596,7 +1265,7 @@ module.exports = async (req, res) => {
     }
 
     // ----------------------------------------------------------
-    // ONLY GET
+    // GET ONLY
     // ----------------------------------------------------------
 
     if (req.method !== "GET") {
@@ -1611,15 +1280,14 @@ module.exports = async (req, res) => {
     }
 
     // ----------------------------------------------------------
-    // PERIOD
+    // TARGET PERIOD
     // ----------------------------------------------------------
 
     const period =
         req.query?.period;
 
     if (
-        period === undefined ||
-        period === null ||
+        !period ||
         String(period).trim() === ""
     ) {
 
@@ -1628,25 +1296,29 @@ module.exports = async (req, res) => {
             status: "error",
 
             message:
-                "Valid period parameter is required. Example: /?period=1001"
+                "Valid period is required. Example: ?period=20260828100052352",
+
+            shouldBet: false,
+
+            action: "SKIP"
         });
     }
 
     const targetPeriod =
         String(period).trim();
 
-    // ----------------------------------------------------------
-    // FETCH REAL HISTORY
-    // ----------------------------------------------------------
-
     try {
 
-        const history =
-            await getWinGoHistory();
+        // ------------------------------------------------------
+        // GET REAL HISTORY
+        // ------------------------------------------------------
+
+        const rawHistory =
+            await fetchHistory();
 
         if (
-            !Array.isArray(history) ||
-            history.length < 5
+            !rawHistory ||
+            rawHistory.length < 20
         ) {
 
             return res.status(503).json({
@@ -1654,10 +1326,10 @@ module.exports = async (req, res) => {
                 status: "error",
 
                 message:
-                    "Unable to get enough real WinGo history.",
+                    "Not enough real WinGo history",
 
                 historyCount:
-                    history?.length || 0,
+                    rawHistory?.length || 0,
 
                 shouldBet: false,
 
@@ -1666,75 +1338,42 @@ module.exports = async (req, res) => {
         }
 
         // ------------------------------------------------------
-        // SORT HISTORY
+        // REMOVE TARGET PERIOD
         //
-        // API usually returns newest first.
-        // We reverse it so calculation works:
-        // OLD -> NEW
+        // If target is already present in API,
+        // don't use its result for predicting itself.
         // ------------------------------------------------------
 
-        const cleanHistory =
-            history.slice(0, 500);
-
-        // ------------------------------------------------------
-        // IMPORTANT:
-        // Target period/result ko prediction data mein
-        // manually add nahi kar rahe.
-        // ------------------------------------------------------
-
-        const targetExists =
-            cleanHistory.some(
-                x =>
-                    String(x.issueNumber) ===
-                    targetPeriod
+        let history =
+            rawHistory.filter(
+                item =>
+                    String(
+                        item.issueNumber
+                    ) !== targetPeriod
             );
 
-        let predictionHistory =
-            cleanHistory.filter(
-                x =>
-                    String(x.issueNumber) !==
-                    targetPeriod
-            );
-
-        // If API order is newest -> oldest,
-        // reverse for chronological calculation.
-        predictionHistory =
-            predictionHistory.reverse();
-
         // ------------------------------------------------------
-        // LIMIT TO LAST 100 RESULTS
+        // API gives newest → oldest.
+        // Predictor needs oldest → newest.
         // ------------------------------------------------------
 
-        predictionHistory =
-            predictionHistory.slice(-100);
-
-        if (
-            predictionHistory.length < 5
-        ) {
-
-            return res.status(503).json({
-
-                status: "error",
-
-                message:
-                    "Not enough valid historical results.",
-
-                historyCount:
-                    predictionHistory.length,
-
-                shouldBet: false,
-
-                action: "SKIP"
-            });
-        }
+        history =
+            history.reverse();
 
         // ------------------------------------------------------
-        // RUN PREDICTOR
+        // LAST 100 REAL RESULTS
+        // ------------------------------------------------------
+
+        history =
+            history.slice(-100);
+
+        // ------------------------------------------------------
+        // PREDICT
         // ------------------------------------------------------
 
         const result =
             predictorEngine.predict(
-                predictionHistory
+                history
             );
 
         if (!result.success) {
@@ -1753,7 +1392,7 @@ module.exports = async (req, res) => {
         }
 
         // ------------------------------------------------------
-        // FINAL API RESPONSE
+        // RESPONSE
         // ------------------------------------------------------
 
         return res.status(200).json({
@@ -1782,22 +1421,25 @@ module.exports = async (req, res) => {
                 result.message,
 
             historyCount:
-                predictionHistory.length,
+                history.length,
 
-            targetAlreadyInHistory:
-                targetExists,
+            calculation:
+                result.calculation,
 
             analysis:
                 result.analysis,
 
-            disclaimer:
-                "Prediction is algorithmic only; WinGo outcomes may be random and no result is guaranteed."
+            source:
+                "WinGo real history",
+
+            note:
+                "Prediction is based on historical calculations only. Random outcomes are not guaranteed."
         });
 
     } catch (error) {
 
         console.error(
-            "WINGO API ERROR:",
+            "WINGO ERROR:",
             error
         );
 
@@ -1806,12 +1448,10 @@ module.exports = async (req, res) => {
             status: "error",
 
             message:
-                "Unable to fetch WinGo history.",
+                "Failed to fetch or calculate WinGo history",
 
             error:
-                process.env.NODE_ENV === "development"
-                    ? error.message
-                    : undefined,
+                error.message,
 
             shouldBet: false,
 
